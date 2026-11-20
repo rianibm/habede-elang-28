@@ -6,6 +6,32 @@ A birthday scrapbook for Elang’s 28th, inspired by the open binder, tactile pa
 
 Run `npm run dev`, then open http://127.0.0.1:4173. No installation or build step is needed. `dist/` contains the complete static website. Run `npm run check` to check JavaScript syntax.
 
+## Deploy to Vercel
+
+The repository is ready for Vercel as a static site. `vercel.json` sets the framework to **Other**, skips dependency installation, runs `npm run build`, and publishes only `dist/`. No environment variables are required.
+
+1. Save and push the desired changes to [rianibm/habede-elang-28](https://github.com/rianibm/habede-elang-28).
+2. In Vercel, select **Add New → Project** and import that repository.
+3. Keep the **Root Directory** at the repository root (`./`). The build settings are supplied by `vercel.json`; if the dashboard asks, use:
+
+   | Setting | Value |
+   | --- | --- |
+   | Framework Preset | Other |
+   | Build Command | `npm run build` |
+   | Output Directory | `dist` |
+   | Install Command | Empty / skipped |
+   | Environment Variables | None |
+
+4. Select **Deploy**. Check the cover, open the book, and play each family video on the resulting URL.
+
+For a CLI deployment from the repository root, run `npx vercel` for a preview, then `npx vercel --prod` when ready for production.
+
+Run `npm run build` locally before pushing. It checks JavaScript syntax and verifies that HTML and video-player asset references resolve to real, nonempty files rather than Git LFS pointers. The static files already live in `dist/`; the build does not regenerate or overwrite them. Keep `dist/` tracked in Git.
+
+`assets/originals/` is outside the published output and excluded from CLI uploads by `.vercelignore`. The optimized photos and the three MP4 files inside `dist/` are included in the website.
+
+Configuration reference: [Vercel project configuration](https://vercel.com/docs/project-configuration/vercel-json).
+
 ## Contents
 
 - **Buka buku:** birthday introduction and Polaroids extracted from the supplied videos.
@@ -45,3 +71,11 @@ Personal photos were converted from PNG (3,513,602 bytes total) to WebP (182,778
 The initial local HTML/CSS/JS plus cover image is approximately 115 KB before compression, excluding Google Fonts and any browser-requested thumbnails. No Lighthouse score or production Core Web Vitals has been measured; the local browser does not expose performance timing through its automation interface.
 
 The initial cover lands with a short 3D toss and a small rebound, followed by an occasional gentle invitation wiggle. The cover itself is clickable and keyboard accessible. The invitation stops when opening begins, pauses in a hidden tab, and is disabled for reduced-motion preferences; it does not run on the ending cover.
+
+## Tactile interactions
+
+The closed view hides the site header and uses a larger cover; navigation appears only after opening. The vinyl slides out on reveal and tucks into its sleeve before leaving the mobile record page or closing the book. Polaroids can be moved with pointer/touch drag or the arrow keys, within bounded positions. Drags do not trigger mobile page swipes. Page corners lift on hover/focus and can advance the book (or close it on the final page). The author photo drops into view, and the ending cover receives a small settling pat. All decorative animation respects reduced motion.
+
+The redundant A1–A3 buttons and the track label under the album were removed. The reminder to call home appears only on the final note, before the credit and close-book button.
+
+The book is split into Side A (orang rumah: family films) and Side B (penutup dari Riani: the final note). On the last desktop spread, the right page switches from the record sleeve to a Riani photo/sign-off. On mobile, the final note remains the separate last page.

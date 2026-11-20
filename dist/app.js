@@ -7,15 +7,18 @@ const mobileLayout = matchMedia('(max-width: 760px)');
 const desktopPages = ['intro', 'films', 'note'];
 const mobilePages = ['intro', 'films', 'record', 'note'];
 let pages = mobileLayout.matches ? mobilePages : desktopPages;
-const pageLabels = { intro: 'Buka buku', films: 'Film keluarga', record: 'Vinyl', note: 'Untuk kamu' };
+const pageLabels = { intro: 'Buka buku', films: 'Film keluarga', record: 'Side A', note: 'Side B' };
 const player = document.querySelector('#family-video');
 let currentFilm = 0;
 let currentPage = 0;
 let currentPageName = 'intro';
+let recordAnimation = null;
+let navigationBusy = false;
 
 function setPage(name, updateHash = true) {
   const index = pages.indexOf(name);
   if (index === -1) return;
+  const albumWasVisible = document.querySelector('.album-assembly').getClientRects().length > 0;
   const pageChanged = index !== currentPage;
   const content = document.querySelector('#left-content');
   const canTurn = index !== currentPage && !document.querySelector('.book-wrap').hidden && !document.documentElement.classList.contains('book-morphing') && !mobileLayout.matches && !matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -23,6 +26,9 @@ function setPage(name, updateHash = true) {
   currentPage = index;
   currentPageName = name;
   document.querySelector('#book').dataset.mobilePage = name;
+  document.querySelector('.side-a-content').hidden = name === 'note';
+  document.querySelector('.side-b-content').hidden = name !== 'note';
+  document.querySelector('.right-page').setAttribute('aria-labelledby', name === 'note' ? 'side-b-title' : 'right-title');
   document.querySelectorAll('[data-content]').forEach(content => { content.hidden = content.dataset.content !== name; });
   document.querySelectorAll('[data-page]').forEach(button => {
     const active = button.dataset.page === name;
@@ -41,6 +47,8 @@ function setPage(name, updateHash = true) {
   content.classList.remove('is-turning');
   void content.offsetWidth;
   content.classList.add('is-turning');
+  document.querySelectorAll('.page-corner').forEach(corner => corner.setAttribute('aria-label', index === pages.length - 1 ? 'Tutup buku dari sudut halaman' : 'Balik halaman berikutnya'));
+  if (!albumWasVisible && document.querySelector('.album-assembly').getClientRects().length > 0) requestAnimationFrame(revealRecord);
   if (updateHash) history.replaceState(null, '', `#${name}`);
   if (pageChanged && mobileLayout.matches && !document.documentElement.classList.contains('book-morphing')) {
     window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
@@ -57,7 +65,6 @@ function selectFilm(index, play = true) {
     button.classList.toggle(button.classList.contains('channel') ? 'active' : 'selected', selected);
     button.setAttribute('aria-pressed', String(selected));
   });
-  document.querySelector('#film-label').textContent = `A${index + 1} — ${film.title}`;
   document.querySelector('#playback-error').hidden = true;
   document.querySelector('#dialog-title').textContent = film.title;
   document.querySelector('#dialog-track').textContent = `TRACK 0${index + 1} / 03`;
@@ -78,10 +85,10 @@ function selectFilm(index, play = true) {
 document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => navigateBook(button.dataset.page)));
 const homeLink = document.querySelector('.logo');
 homeLink.addEventListener('click', event => { event.preventDefault(); navigateBook('intro'); });
-document.querySelector('#previous-page').addEventListener('click', () => { if (currentPage > 0) setPage(pages[currentPage - 1]); });
-document.querySelector('#next-page').addEventListener('click', () => { if (currentPage < pages.length - 1) setPage(pages[currentPage + 1]); });
+document.querySelector('#previous-page').addEventListener('click', () => { if (currentPage > 0) navigateBook(pages[currentPage - 1]); });
+document.querySelector('#next-page').addEventListener('click', () => { if (currentPage < pages.length - 1) navigateBook(pages[currentPage + 1]); });
 document.querySelectorAll('[data-video]').forEach(button => button.addEventListener('click', () => {
-  setPage('films');
+  if (currentPageName !== 'record') setPage('films');
   selectFilm(Number(button.dataset.video));
 }));
 function syncRecord() {
@@ -98,7 +105,6 @@ filmDialog.addEventListener('click', event => {
 document.querySelector('#previous-film').addEventListener('click', () => selectFilm(currentFilm - 1));
 document.querySelector('#next-film').addEventListener('click', () => selectFilm(currentFilm + 1));
 player.addEventListener('error', () => { document.querySelector('#playback-error').hidden = false; });
-player.addEventListener('ended', () => { document.querySelector('#film-label').textContent = `TRACK 0${currentFilm + 1} · Putar lagi kapan pun kamu kangen ♡`; });
 window.addEventListener('hashchange', () => setPage(location.hash.slice(1), false));
 setPage('intro', false);
 history.replaceState(null, '', location.pathname + location.search);
@@ -149,11 +155,15 @@ async function morphBook(update, direction, animate = true) {
   }
 }
 async function closeBook() {
-  if (bookBusy || bookWrap.hidden) return;
+  if (bookBusy || navigationBusy || bookWrap.hidden) return;
+  navigationBusy = true;
+  await tuckRecord();
+  navigationBusy = false;
   player.pause();
   if (filmDialog.open) filmDialog.close();
   await morphBook(() => {
     document.querySelectorAll('.turning-paper').forEach(sheet => sheet.remove());
+    document.querySelector('.site-header').hidden = true;
     bookWrap.hidden = true;
     document.querySelector('.below-book').hidden = true;
     document.querySelector('.desk-note').hidden = true;
@@ -163,6 +173,7 @@ async function closeBook() {
     history.replaceState(null, '', location.pathname + location.search);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, 'closing');
+  patClosedBook();
   document.querySelector('#reopen-book').focus({ preventScroll: true });
 }
 async function reopenBook(page = 'intro', animate = true) {
@@ -170,18 +181,24 @@ async function reopenBook(page = 'intro', animate = true) {
   stopCoverInvitation();
   await morphBook(() => {
     closedScene.hidden = true;
+    document.querySelector('.site-header').hidden = false;
     bookWrap.hidden = false;
     document.querySelector('.below-book').hidden = false;
     document.querySelector('.desk-note').hidden = false;
     setPage(page);
+    if (document.querySelector('.album-assembly').getClientRects().length) requestAnimationFrame(revealRecord);
     if (animate) window.scrollTo({ top: 0, behavior: 'instant' });
   }, 'opening', animate);
   document.querySelector('#interactive-cover').style.removeProperty('transform');
 }
-function navigateBook(page) {
-  if (bookBusy) return;
-  if (!closedScene.hidden) reopenBook(page);
-  else setPage(page);
+async function navigateBook(page) {
+  if (bookBusy || navigationBusy) return;
+  if (!closedScene.hidden) return reopenBook(page);
+  if (page === currentPageName) return;
+  navigationBusy = true;
+  if ((mobileLayout.matches && currentPageName === 'record') || page === 'note') await tuckRecord();
+  setPage(page);
+  navigationBusy = false;
 }
 document.querySelector('#close-book').addEventListener('click', closeBook);
 document.querySelector('#reopen-book').addEventListener('click', async () => {
@@ -253,7 +270,7 @@ mobileLayout.addEventListener('change', () => {
 let swipeStart = null;
 const bookPages = document.querySelector('#book-pages');
 bookPages.addEventListener('touchstart', event => {
-  if (!mobileLayout.matches || bookBusy || event.touches.length !== 1) return;
+  if (!mobileLayout.matches || bookBusy || event.touches.length !== 1 || event.target.closest('[data-draggable]')) return;
   swipeStart = { x: event.touches[0].clientX, y: event.touches[0].clientY };
 }, { passive: true });
 bookPages.addEventListener('touchend', event => {
@@ -265,7 +282,7 @@ bookPages.addEventListener('touchend', event => {
   const target = currentPage + (dx < 0 ? 1 : -1);
   if (target >= 0 && target < pages.length) {
     event.preventDefault();
-    setPage(pages[target]);
+    navigateBook(pages[target]);
   }
 }, { passive: false });
 bookPages.addEventListener('touchcancel', () => { swipeStart = null; });
@@ -303,3 +320,98 @@ matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event 
   if (event.matches) stopCoverInvitation();
 });
 inviteToOpen();
+
+function revealRecord() {
+  const record = document.querySelector('.album-record');
+  recordAnimation?.cancel();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  recordAnimation = record.animate([
+    { transform: 'translateX(-36%) rotate(4deg)', opacity: .3 },
+    { transform: 'translateX(2%) rotate(22deg)', opacity: 1, offset: .78 },
+    { transform: 'translateX(0) rotate(20deg)', opacity: 1 }
+  ], { duration: 850, delay: 120, easing: 'cubic-bezier(.2,.75,.2,1)' });
+}
+async function tuckRecord() {
+  if (!document.querySelector('.album-assembly').getClientRects().length || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  recordAnimation?.cancel();
+  recordAnimation = document.querySelector('.album-record').animate([
+    { transform: 'translateX(0) rotate(20deg)', opacity: 1 },
+    { transform: 'translateX(-36%) rotate(4deg)', opacity: .15 }
+  ], { duration: 300, easing: 'cubic-bezier(.4,0,.3,1)', fill: 'forwards' });
+  await recordAnimation.finished.catch(() => {});
+}
+function patClosedBook() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cover = document.querySelector('#interactive-cover');
+  const rest = getComputedStyle(cover).transform;
+  cover.animate([
+    { transform: rest },
+    { transform: 'perspective(1400px) translateY(3px) rotateX(1deg) rotateY(-7deg) rotateZ(-4deg) scale(.99)', offset: .3 },
+    { transform: 'perspective(1400px) translateY(-2px) rotateX(4deg) rotateY(-11deg) rotateZ(-3.7deg)', offset: .6 },
+    { transform: rest }
+  ], { duration: 430, delay: 100, easing: 'ease-out' });
+}
+document.querySelectorAll('.page-corner').forEach(corner => {
+  corner.addEventListener('click', () => {
+    if (currentPage < pages.length - 1) navigateBook(pages[currentPage + 1]);
+    else closeBook();
+  });
+});
+
+// Individual translate/rotate properties keep each photo’s original paper tilt.
+document.querySelectorAll('.polaroid, .ending-polaroid').forEach(photo => {
+  photo.dataset.draggable = 'true';
+  photo.tabIndex = 0;
+  photo.setAttribute('aria-label', (photo.querySelector('img')?.alt || 'Foto') + '. Geser atau gunakan tombol panah untuk merapikan.');
+  let drag = null;
+  let suppressClick = false;
+  let frame = 0;
+  const moveTo = (x, y, tilt) => {
+    photo.dataset.dragX = String(x);
+    photo.dataset.dragY = String(y);
+    photo.style.translate = `${x}px ${y}px`;
+    photo.style.rotate = `${tilt}deg`;
+  };
+  photo.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || bookBusy) return;
+    event.stopPropagation();
+    const parent = photo.parentElement.getBoundingClientRect();
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY,
+      initialX: Number(photo.dataset.dragX || 0), initialY: Number(photo.dataset.dragY || 0),
+      limitX: Math.min(65, parent.width * .22), limitY: Math.min(45, parent.height * .2), moved: false };
+    photo.setPointerCapture(event.pointerId);
+    photo.classList.add('is-dragging');
+  });
+  photo.addEventListener('pointermove', event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
+    const x = Math.max(-drag.limitX, Math.min(drag.limitX, drag.initialX + dx));
+    const y = Math.max(-drag.limitY, Math.min(drag.limitY, drag.initialY + dy));
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => moveTo(x, y, Math.max(-3, Math.min(3, dx * .035))));
+  });
+  const release = event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    suppressClick = drag.moved;
+    drag = null;
+    photo.classList.remove('is-dragging');
+    if (photo.hasPointerCapture(event.pointerId)) photo.releasePointerCapture(event.pointerId);
+    setTimeout(() => { suppressClick = false; }, 0);
+  };
+  photo.addEventListener('pointerup', release);
+  photo.addEventListener('pointercancel', release);
+  photo.addEventListener('click', event => {
+    if (suppressClick) { event.preventDefault(); event.stopPropagation(); }
+  });
+  photo.addEventListener('keydown', event => {
+    const steps = { ArrowLeft: [-5, 0], ArrowRight: [5, 0], ArrowUp: [0, -5], ArrowDown: [0, 5] };
+    if (!steps[event.key]) return;
+    event.preventDefault(); event.stopPropagation();
+    const [dx, dy] = steps[event.key];
+    moveTo(Math.max(-55, Math.min(55, Number(photo.dataset.dragX || 0) + dx)),
+      Math.max(-40, Math.min(40, Number(photo.dataset.dragY || 0) + dy)), dx * .3);
+  });
+  photo.querySelector('img')?.setAttribute('draggable', 'false');
+});

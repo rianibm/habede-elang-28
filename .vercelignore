@@ -1,0 +1,5 @@
+assets/originals/
+node_modules/
+.vercel/
+.DS_Store
+README.md
